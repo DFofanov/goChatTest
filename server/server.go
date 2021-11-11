@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
+	"strconv"
 
 	"github.com/droundy/goopt"
 	"github.com/gorilla/websocket"
@@ -32,11 +34,30 @@ var (
 
 type (
 	Message struct {
-		Length    []byte
-		Recipient []byte
-		Text      []byte
+		recipient string
+		text      string
+	}
+
+	Response struct {
+		length []byte
+		data   []byte
 	}
 )
+
+func newUserMap() {
+	clientIdentities = map[string]*websocket.Conn{}
+}
+
+func IntToByteArray(num int, size int) []byte {
+	tmp_arr := make([]byte, size)
+	binary.LittleEndian.PutUint16(tmp_arr, uint16(num))
+
+	result_arr := make([]byte, size)
+	for i := size - 1; i >= 0; i-- {
+		result_arr[i] = tmp_arr[(size-1)-i]
+	}
+	return result_arr
+}
 
 func ws(w http.ResponseWriter, r *http.Request) {
 	upgrader := websocket.Upgrader{}
@@ -45,8 +66,8 @@ func ws(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clientName := r.Header.Get("X-Small-Chat-Id")
-	clientIdentities[clientName] = conn
+	client := r.Header.Get("X-Small-Chat-Id")
+	clientIdentities[client] = conn
 
 	for {
 		_, msg, err := conn.ReadMessage()
@@ -54,21 +75,33 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			conn.Close()
 			return
 		}
-		message := Message{msg[:2], []byte(strings.Split(string(msg[2:]), "->")[0]), []byte(strings.Split(string(msg[2:]), "->")[1])}
-		log.Printf("msg from %s -> to %s: Len %s, Message %s", string(clientName), string(message.Recipient), string(message.Length), string(message.Text))
 
-		// switch clientName {
-		// case "vic":
-		// 	go clientIdentities["judy"].WriteMessage(websocket.TextMessage, message)
-		// case "judy":
-		// 	go clientIdentities["vic"].WriteMessage(websocket.TextMessage, message)
-		// }
+		length, err := strconv.ParseInt(string(msg[:2]), 2, 64)
+		if err != nil {
+			fmt.Printf("Error: %s", err)
+		}
 
+		if int(length) == len(msg[2:]) {
+			req := Message{}
+			json.Unmarshal(msg[2:], &req)
+
+			log.Printf("msg from %s -> to %s: Len %v, Message %s", client, req.recipient, length, req.text)
+
+			js, _ := json.Marshal(Message{client, req.text})
+			resp := Response{IntToByteArray(len(js), 2), js}
+			str := string(resp.length) + string(resp.data)
+			wsc, ok := clientIdentities[req.recipient]
+			if ok {
+				wsc.WriteMessage(websocket.TextMessage, []byte(str))
+			} else {
+				if req.recipient == "all" {
+					for _, wsc := range clientIdentities {
+						wsc.WriteMessage(websocket.TextMessage, []byte(str))
+					}
+				}
+			}
+		}
 	}
-}
-
-func newUserMap() {
-	clientIdentities = map[string]*websocket.Conn{}
 }
 
 func main() {
@@ -82,13 +115,10 @@ func main() {
 		return goopt.Summary + "\n\nUnless an option is passed to it."
 	}
 	goopt.NoArg([]string{"-v", "--version"}, "outputs version information and exits", Version)
-	//	goopt.Parse(nil)
-	//	if len(goopt.Args) != 1 {
-	//		PrintUsage()
-	//	}
 
-	//	bs := []byte(strconv.Itoa(31415926))
-	//	fmt.Println(bs)
+	//	if err != nil {
+	//		fmt.Println(err)
+	//	}
 
 	newUserMap()
 	http.HandleFunc("/", ws)
