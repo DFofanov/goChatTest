@@ -76,6 +76,15 @@ func ws(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		//js, _ := json.Marshal(map[string]string{})
+		//var buf bytes.Buffer
+		//buf.ReadByte(&msg)
+		//dec := gob.NewDecoder(buf)
+		err := enc.Decode(&msg)
+		if err != nil {
+			log.Println("Error: %s", err)
+		}
+
 		length, err := strconv.ParseInt(string(msg[:2]), 2, 64)
 		if err != nil {
 			fmt.Printf("Error: %s", err)
@@ -89,14 +98,14 @@ func ws(w http.ResponseWriter, r *http.Request) {
 
 			js, _ := json.Marshal(Message{client, req.text})
 			resp := Response{IntToByteArray(len(js), 2), js}
-			str := string(resp.length) + string(resp.data)
+			text := string(resp.length) + string(resp.data)
 			wsc, ok := clientIdentities[req.recipient]
 			if ok {
-				wsc.WriteMessage(websocket.TextMessage, []byte(str))
+				wsc.WriteMessage(websocket.TextMessage, []byte(text))
 			} else {
 				if req.recipient == "all" {
 					for _, wsc := range clientIdentities {
-						wsc.WriteMessage(websocket.TextMessage, []byte(str))
+						wsc.WriteMessage(websocket.TextMessage, []byte(text))
 					}
 				}
 			}

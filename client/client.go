@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"encoding/gob"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -34,10 +37,12 @@ var (
 	userName    = flag.String("username", "vic", "username")
 )
 
-type Client struct {
-	conn     *websocket.Conn
-	identity string
-}
+type (
+	Client struct {
+		conn     *websocket.Conn
+		identity string
+	}
+)
 
 func stert() {
 	flag.Parse()
@@ -106,11 +111,21 @@ func stert() {
 
 		//scanner := bufio.NewScanner(os.Stdin)
 
-		fmt.Println("Enter text: ")
+		//fmt.Println("Enter text: ")
 		//scanner.Scan()
-		text := "test" //scanner.Text()
-		if len(text) != 0 {
-			client.conn.WriteMessage(websocket.TextMessage, []byte(text))
+		//text := "test" //scanner.Text()
+
+		js, _ := json.Marshal(map[string]string{"clientName": "all", "Message": "Hello World!"})
+
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		err := enc.Encode(js)
+		if err != nil {
+			log.Println("Error: %s", err)
+		}
+
+		if buf.Len() != 0 {
+			client.conn.WriteMessage(websocket.TextMessage, []byte(buf.String()))
 		}
 
 		fmt.Println("Msg sended to server: ", arr)
